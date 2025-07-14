@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- ✏️ Update the page title to match your league name -->
+  <title>YOUR LEAGUE Live Scores</title>
+
+  <!-- Axios for making HTTP requests -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+  <style>
+    :root {
+      --bg-color: #121212;
+      --card-color: #1e1e1e;
+      --accent-color: #00ff88;
+      --text-color: #ffffff;
+      --text-muted: #aaa;
+    }
+
+    /* ✨ Styling for a dark theme scoreboard UI */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      min-height: 100vh;
+      padding: 24px;
+      max-width: 760px;
+      margin: auto;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 32px;
+      margin-bottom: 16px;
+    }
+
+    .loading {
+      text-align: center;
+      font-size: 14px;
+      color: var(--accent-color);
+      margin-bottom: 16px;
+    }
+
+    .home-link {
+      display: block;
+      text-align: center;
+      margin-top: 30px;
+      font-size: 14px;
+      color: var(--accent-color);
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+
+    .home-link:hover {
+      opacity: 0.7;
+    }
+
+    .game-container {
+      background-color: var(--card-color);
+      border-radius: 16px;
+      margin-bottom: 24px;
+      box-shadow: 0 0 12px rgba(0, 255, 136, 0.15);
+      overflow: hidden;
+    }
+
+    .game-header {
+      padding: 16px 20px;
+      background-color: #2a2a2a;
+      cursor: pointer;
+      border-bottom: 1px solid #333;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      font-size: 17px;
+      transition: background 0.2s ease;
+    }
+
+    .game-header:hover {
+      background-color: #353535;
+    }
+
+    .game-body {
+      display: none;
+      padding: 20px;
+    }
+
+    .team-roster {
+      margin-bottom: 24px;
+    }
+
+    .roster-title {
+      font-weight: bold;
+      margin-bottom: 8px;
+      color: var(--text-muted);
+    }
+
+    .player-row {
+      padding: 6px 12px;
+      background-color: #333;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ✏️ Customize your scoreboard title -->
+  <h1>YOUR LEAGUE Live Scores</h1>
+
+  <div class="loading" id="loading-indicator">Loading...</div>
+  <div id="games-container"></div>
+
+  <!-- ✏️ Link back to homepage -->
+  <a href="index.html" class="home-link">← Home</a>
+
+  <script>
+    // === 🔧 CONFIGURATION SECTION (Update these) ===
+
+    // ✏️ Link to your Google Sheets CSV for the schedule
+    const scheduleCsvUrl = 'PASTE_YOUR_SCHEDULE_CSV_URL_HERE';
+
+    // ✏️ Link to your Google Sheets CSV for rosters
+    const rosterCsvUrl = 'PASTE_YOUR_ROSTER_CSV_URL_HERE';
+
+    // ✏️ Your Cloudflare Worker or proxy URL that fetches user karma
+    const WORKER_URL = 'PASTE_YOUR_WORKER_URL_HERE';
+
+    // === 🔁 Functional logic ===
+
+    const karmaCache = new Map();
+
+    function getTodayString() {
+      const now = new Date();
+      const est = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+      if (est.getHours() < 7) est.setDate(est.getDate() - 1);
+      return `${est.getMonth() + 1}/${est.getDate()}`;
+    }
+
+    function parseCSV(text) {
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.trim());
+      return lines.slice(1).map(line => {
+        const values = line.split(',').map(p => p.trim());
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = values[i]);
+        return obj;
+      });
+    }
+
+    async function fetchKarma(userId) {
+      if (karmaCache.has(userId)) return karmaCache.get(userId);
+      try {
+        const res = await fetch(`${WORKER_URL}?userId=${encodeURIComponent(userId)}`);
+        const data = await res.json();
+        const val = parseFloat(data?.stats?.karmaDelta || 0);
+        karmaCache.set(userId, val);
+        return val;
+      } catch {
+        return 0;
+      }
+    }
+
+    async function limitedMap(array, limit, asyncFn, onProgress) {
+      const results = [];
+      let index = 0;
+      const executing = new Set();
+
+      for (const item of array) {
+        const p = asyncFn(item).then(res => {
+          results.push(res);
+          if (onProgress) onProgress(++index, array.length);
+        });
+        executing.add(p);
+        p.finally(() => executing.delete(p));
+        if (executing.size >= limit) await Promise.race(executing);
+      }
+      await Promise.all(executing);
+      return results;
+    }
+
+    async function processTeam(players, updateProgress) {
+      let teamTotal = 0;
+      const rows = await limitedMap(players, 10, async p => {
+        const userId = p['User ID']?.trim();
+        const userAt = p['User @']?.trim() || 'Unknown';
+        const role = (p['role'] || '').toLowerCase();
+        const deduction = parseFloat(p['deductions'] || 0);
+
+        if (!userId || userId.toLowerCase() === 'not found') return `${userAt}: missing`;
+
+        const base = await fetchKarma(userId);
+        const adjusted = base - deduction;
+        const boosted = role === 'captain' ? adjusted * 1.5 : adjusted;
+
+        teamTotal += boosted;
+
+        const rounded = Math.round(adjusted);
+        const label = role === 'captain'
+          ? `${userAt} (c): ${rounded} → ${Math.round(boosted)}`
+          : `${userAt}: ${rounded}`;
+
+        return `<div class="player-row">${label}</div>`;
+      }, updateProgress);
+      return { rows, total: Math.round(teamTotal) };
+    }
+
+    function createGameHTML(team1, team2, t1Total, t2Total, t1Rows, t2Rows, index) {
+      const id = `game-${index}`;
+      return `
+        <div class="game-container">
+          <div class="game-header" onclick="
+            const body = document.getElementById('${id}');
+            body.style.display = body.style.display === 'block' ? 'none' : 'block';
+          ">
+            ${team1} (${t1Total}) vs ${team2} (${t2Total})
+          </div>
+          <div class="game-body" id="${id}">
+            <div class="team-roster">
+              <div class="roster-title">${team1}</div>
+              ${t1Rows.join('')}
+            </div>
+            <div class="team-roster">
+              <div class="roster-title">${team2}</div>
+              ${t2Rows.join('')}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    async function loadGames() {
+      const loading = document.getElementById('loading-indicator');
+      const container = document.getElementById('games-container');
+
+      try {
+        const [scheduleRes, rosterRes] = await Promise.all([
+          axios.get(scheduleCsvUrl),
+          axios.get(rosterCsvUrl)
+        ]);
+
+        const today = getTodayString();
+        const games = parseCSV(scheduleRes.data).filter(g => g.Date?.trim() === today);
+        const players = parseCSV(rosterRes.data).filter(p => p['playing?']?.toLowerCase() === 'yes');
+
+        let loaded = 0;
+        const total = players.length;
+        const updateProgress = () => {
+          loading.textContent = `Loaded ${loaded++} out of ${total} players...`;
+        };
+
+        for (let i = 0; i < games.length; i++) {
+          const game = games[i];
+          const t1 = game['Team 1'];
+          const t2 = game['Team 2'];
+          const t1Players = players.filter(p => p.Team === t1);
+          const t2Players = players.filter(p => p.Team === t2);
+
+          const [t1Data, t2Data] = await Promise.all([
+            processTeam(t1Players, updateProgress),
+            processTeam(t2Players, updateProgress)
+          ]);
+
+          container.innerHTML += createGameHTML(t1, t2, t1Data.total, t2Data.total, t1Data.rows, t2Data.rows, i);
+        }
+
+        loading.textContent = 'Done.';
+      } catch (e) {
+        loading.textContent = 'Failed to load game data.';
+        console.error(e);
+      }
+    }
+
+    loadGames();
+  </script>
+</body>
+</html>
