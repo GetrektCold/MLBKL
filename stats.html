@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- ✏️ Change this title to your league's name -->
+  <title>YOUR LEAGUE Live Stats</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+  <style>
+    :root {
+      --bg-color: #121212;
+      --card-color: #1e1e1e;
+      --accent-color: #00ff88;
+      --text-color: #ffffff;
+      --text-muted: #aaa;
+    }
+
+    /* Basic styling for the stats page */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      min-height: 100vh;
+      padding: 24px;
+      max-width: 760px;
+      margin: auto;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 32px;
+      margin-bottom: 16px;
+    }
+
+    p {
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .home-link {
+      display: block;
+      text-align: center;
+      margin-top: 30px;
+      font-size: 14px;
+      color: var(--accent-color);
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+
+    .home-link:hover {
+      opacity: 0.7;
+    }
+
+    .stat-section {
+      background-color: var(--card-color);
+      border-radius: 16px;
+      margin-bottom: 24px;
+      box-shadow: 0 0 12px rgba(0, 255, 136, 0.15);
+      overflow: hidden;
+    }
+
+    .stat-title {
+      font-size: 17px;
+      font-weight: 600;
+      padding: 16px 20px;
+      background-color: #2a2a2a;
+      cursor: pointer;
+      border-bottom: 1px solid #333;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.2s ease;
+      gap: 12px;
+      white-space: nowrap;
+    }
+
+    .stat-title span {
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .stat-title:hover {
+      background-color: #353535;
+    }
+
+    .stat-list {
+      display: none;
+      padding: 18px 20px 20px;
+    }
+
+    .player, .team {
+      margin: 6px 0;
+      font-size: 15px;
+      color: var(--text-muted);
+    }
+
+    .highlight {
+      color: var(--accent-color);
+      font-weight: 600;
+    }
+
+    #playerSearch {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: none;
+      background-color: #2a2a2a;
+      color: white;
+      margin-bottom: 12px;
+    }
+
+    #playerResult {
+      display: none;
+      background-color: var(--card-color);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0, 255, 136, 0.1);
+      animation: fadeIn 0.2s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 480px) {
+      .stat-title {
+        flex-direction: column;
+        align-items: flex-start;
+        font-size: 14px;
+        gap: 4px;
+      }
+
+      .stat-title span {
+        align-self: flex-end;
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ✏️ Change this heading to your league or event name -->
+  <h1>YOUR LEAGUE Live Stats</h1>
+  <p>Click to expand each leaderboard section</p>
+
+  <div class="loading-bar" id="loading-bar"></div>
+
+  <div style="margin-bottom: 30px;">
+    <input id="playerSearch" type="text" placeholder="Search player..." />
+    <div id="playerResult"></div>
+  </div>
+
+  <div id="stats"></div>
+
+  <a class="home-link" href="index.html">← Home</a>
+
+  <script>
+    // === 🔧 CONFIGURATION SECTION (Update these) ===
+
+    // ✏️ Your schedule CSV URL (Google Sheets or other public CSV)
+    const scheduleCsvUrl = 'PASTE_YOUR_SCHEDULE_CSV_URL_HERE';
+
+    // ✏️ Your roster CSV URL
+    const rosterCsvUrl = 'PASTE_YOUR_ROSTER_CSV_URL_HERE';
+
+    // ✏️ Your Cloudflare Worker URL to fetch karma data
+    const WORKER_URL = 'PASTE_YOUR_WORKER_URL_HERE';
+
+    // === 🔁 Functional logic follows (No need to change) ===
+
+    let fullPlayerMap = new Map();
+    let playerMedian = 0;
+
+    function getTodayString() {
+      const now = new Date();
+      const est = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+      if (est.getHours() < 7) est.setDate(est.getDate() - 1);
+      return `${est.getMonth() + 1}/${est.getDate()}`;
+    }
+
+    function parseCSV(text) {
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.trim());
+      return lines.slice(1).map(line => {
+        const values = line.split(',').map(p => p.trim());
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = values[i]);
+        return obj;
+      });
+    }
+
+    async function fetchKarma(userId) {
+      try {
+        const res = await fetch(`${WORKER_URL}?userId=${encodeURIComponent(userId)}`);
+        const data = await res.json();
+        return {
+          karmaDelta: parseFloat(data?.stats?.karmaDelta || 0),
+          karmaDayRank: parseInt(data?.stats?.karmaDayRank || -1),
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    // Player search functionality
+    document.getElementById('playerSearch').addEventListener('input', e => {
+      const val = e.target.value.trim().toLowerCase();
+      const resDiv = document.getElementById('playerResult');
+
+      if (!val || fullPlayerMap.size === 0) {
+        resDiv.style.display = 'none';
+        resDiv.innerHTML = '';
+        return;
+      }
+
+      const found = Array.from(fullPlayerMap.entries()).find(([user]) => user.toLowerCase().includes(val));
+      if (!found) {
+        resDiv.style.display = 'none';
+        resDiv.innerHTML = '';
+        return;
+      }
+
+      const [username, data] = found;
+      const aboveMedian = (data.score - playerMedian).toFixed(2);
+      const relScore = playerMedian ? (data.score / playerMedian).toFixed(2) : '0.00';
+
+      resDiv.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <div style="font-size: 20px; font-weight: 600;">${username}</div>
+            <div style="font-size: 14px; color: #aaa;">${data.team}</div>
+          </div>
+          <div style="background-color: #333; padding: 6px 12px; border-radius: 6px; font-size: 16px;">${data.score.toFixed(2)}</div>
+        </div>
+        <div style="margin-top: 10px; font-size: 14px;">
+          Karma Rank: <span class="highlight">${data.rank > 0 ? data.rank : 'N/A'}</span><br>
+          Points Above Median: <span class="highlight">${aboveMedian}</span><br>
+          REL Score: <span class="highlight">${relScore}</span>
+        </div>
+      `;
+      resDiv.style.display = 'block';
+    });
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      const stats = document.getElementById('stats');
+      const loadingBar = document.getElementById('loading-bar');
+
+      loadingBar.textContent = 'Loading...';
+
+      const [scheduleRes, rosterRes] = await Promise.all([
+        axios.get(scheduleCsvUrl),
+        axios.get(rosterCsvUrl),
+      ]);
+
+      const today = getTodayString();
+      const games = parseCSV(scheduleRes.data).filter(g => g.Date?.trim() === today);
+      const teamsToday = new Set(games.flatMap(g => [g['Team 1'], g['Team 2']]));
+      const players = parseCSV(rosterRes.data).filter(p => p['playing?']?.toLowerCase() === 'yes' && teamsToday.has(p.Team));
+
+      const karmaMap = new Map();
+      const rankEntries = [];
+      let rankEligibleCount = 0;
+      let loaded = 0;
+
+      // Fetch karma data in batches of 10 for better performance
+      for (let i = 0; i < players.length; i += 10) {
+        await Promise.all(players.slice(i, i + 10).map(async p => {
+          const userId = p['User ID']?.trim();
+          const userAt = p['User @']?.replace(/^@/, '');
+          if (!userId || userId.toLowerCase() === 'not found') return;
+          const data = await fetchKarma(userId);
+          if (data !== null) {
+            const { karmaDelta, karmaDayRank } = data;
+            karmaMap.set(userAt, { team: p.Team, score: karmaDelta, rank: karmaDayRank });
+            if (karmaDayRank > 0) {
+              rankEntries.push({ user: userAt, team: p.Team, rank: karmaDayRank });
+              if (karmaDayRank <= 1000) rankEligibleCount++;
+            }
+            loaded++;
+            loadingBar.textContent = `Loaded ${loaded} out of ${players.length} players...`;
+          }
+        }));
+      }
+
+      fullPlayerMap = karmaMap;
+
+      // Aggregate team scores from player karma
+      const teamScores = {};
+      for (let [user, { team, score }] of karmaMap.entries()) {
+        teamScores[team] = (teamScores[team] || 0) + score;
+      }
+
+      // Sort and calculate medians
+      const teamSorted = Object.entries(teamScores).sort((a,b)=>b[1]-a[1]);
+      const playerSorted = Array.from(karmaMap.entries()).sort((a,b)=>b[1].score-b[1].score);
+      const teamValues = Object.values(teamScores);
+      const playerValues = Array.from(karmaMap.values()).map(p => p.score);
+      const teamMedian = teamValues.sort((a,b)=>a-b)[Math.floor(teamValues.length/2)] || 0;
+      playerMedian = playerValues.sort((a,b)=>a-b)[Math.floor(playerValues.length/2)] || 0;
+
+      // Calculate relative player scores
+      const relScores = Array.from(karmaMap.entries()).map(([user, val]) => {
+        const rel = playerMedian ? (val.score / playerMedian) : 0;
+        return { user, team: val.team, score: val.score, rel: rel.toFixed(2) };
+      }).sort((a,b)=>b.rel-a.rel);
+
+      // Sort rank entries for top/bottom 5 karma ranks
+      const rankSorted = rankEntries.sort((a, b) => a.rank - b.rank);
+      const top5Ranks = rankSorted.slice(0, 5);
+      const bottom5Ranks = rankSorted.slice(-5).reverse();
+
+      // Helper to build HTML sections for stats
+      function buildSection(title, list, key, type) {
+        const id = `${type}-${key}-${title.replace(/\s+/g,'-')}`;
+        const preview = type === 'player'
+          ? `${list[0].user} (${list[0].team}) - ${key === 'rel' ? list[0].rel : list[0][key]}`
+          : `${list[0][0]} - ${list[0][1].toFixed(1)}`;
+        return `
+          <div class="stat-section">
+            <div class="stat-title" data-target="${id}">
+              ${title}: <span class="highlight">${preview}</span>
+            </div>
+            <div class="stat-list" id="${id}">
+              ${list.map(x => {
+                if (type === 'player') {
+                  return `<div class="player">${x.user} (${x.team}) - ${x[key]}</div>`;
+                } else {
+                  return `<div class="team">${x[0]}: ${x[1].toFixed(1)}</div>`;
+                }
+              }).join('')}
+            </div>
+          </div>`;
+      }
+
+      loadingBar.textContent = '';
+
+      stats.innerHTML = `
+        ${buildSection('Top 3 Teams', teamSorted.slice(0,3), 1, 'team')}
+        ${buildSection('Bottom 3 Teams', teamSorted.slice(-3).reverse(), 1, 'team')}
+        ${buildSection('Top 5 Players', playerSorted.slice(0,5).map(([user, val]) => ({ user, ...val })), 'score', 'player')}
+        ${buildSection('Bottom 5 Players', playerSorted.slice(-5).reverse().map(([user, val]) => ({ user, ...val })), 'score', 'player')}
+        ${buildSection('League Median Team Score', [["Median", teamMedian]], 1, 'team')}
+        ${buildSection('League Median Player Score', [["Median", playerMedian]], 1, 'team')}
+        ${buildSection('Top 5 REL (Relative Performance)', relScores.slice(0,5), 'rel', 'player')}
+        ${buildSection('Top 5 User Karma Rank', top5Ranks, 'rank', 'player')}
+        ${buildSection('Bottom 5 User Karma Rank', bottom5Ranks, 'rank', 'player')}
+        <div class="stat-section">
+          <div class="stat-title">
+            Total Players Ranked Today: <span class="highlight">${rankEligibleCount}</span>
+          </div>
+        </div>
+      `;
+
+      // Add click-to-toggle event on stat titles:
+      stats.addEventListener('click', e => {
+        const title = e.target.closest('.stat-title');
+        if (!title) return;
+        const targetId = title.dataset.target;
+        if (!targetId) return;
+
+        const listEl = document.getElementById(targetId);
+        if (!listEl) return;
+
+        listEl.style.display = (listEl.style.display === 'block') ? 'none' : 'block';
+      });
+    });
+  </script>
+</body>
+</html>
