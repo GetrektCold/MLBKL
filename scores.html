@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- ✏️ Update the page title to match your league name -->
-  <title>YOUR LEAGUE Live Scores</title>
+  <title>MLBKL Live Scores</title>
 
   <!-- Axios for making HTTP requests -->
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -115,7 +115,7 @@
 <body>
 
   <!-- ✏️ Customize your scoreboard title -->
-  <h1>YOUR LEAGUE Live Scores</h1>
+  <h1>MLBKL Live Scores</h1>
 
   <div class="loading" id="loading-indicator">Loading...</div>
   <div id="games-container"></div>
@@ -130,7 +130,7 @@
     const scheduleCsvUrl = 'PASTE_YOUR_SCHEDULE_CSV_URL_HERE';
 
     // ✏️ Link to your Google Sheets CSV for rosters
-    const rosterCsvUrl = 'PASTE_YOUR_ROSTER_CSV_URL_HERE';
+    const rosterCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQojOmHcrhb4PKKqiE6mx-bNaPmfVObS0jbUuXU50sKXpKdUlhuPX04hm7UpZ89QBRrNBTFM_z77ESa/pub?output=csv';
 
     // ✏️ Your Cloudflare Worker or proxy URL that fetches user karma
     const WORKER_URL = 'PASTE_YOUR_WORKER_URL_HERE';
