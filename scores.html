@@ -19,7 +19,6 @@
       --text-muted: #aaa;
     }
 
-    /* ✨ Styling for a dark theme scoreboard UI */
     * {
       margin: 0;
       padding: 0;
@@ -45,7 +44,6 @@
       text-align: center;
       margin-bottom: 16px;
     }
-
 
     .loading {
       text-align: center;
@@ -114,18 +112,32 @@
       border-radius: 6px;
       margin-bottom: 6px;
       font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .player-label {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .karma-rank {
+      color: var(--accent-color);
+      margin-left: 16px;
+      font-weight: bold;
+      min-width: 32px;
+      text-align: right;
     }
   </style>
 </head>
 <body>
 
-  <!-- ✏️ Customize your scoreboard title -->
   <h1>MLBKL Live Scores</h1>
-  <h5>Karma day rank shown in parenthesis for each player</h5>
+  <h5>Karma day rank now shows at the far right of each player</h5>
   <div class="loading" id="loading-indicator">Loading...</div>
   <div id="games-container"></div>
 
-  <!-- ✏️ Link back to homepage -->
   <a href="index.html" class="home-link">← Home</a>
 
   <script>
@@ -162,23 +174,22 @@
       });
     }
 
-   async function fetchKarma(userId) {
-  if (karmaCache.has(userId)) return karmaCache.get(userId);
-  try {
-    const res = await fetch(`${WORKER_URL}?userId=${encodeURIComponent(userId)}`);
-    const data = await res.json();
+    async function fetchKarma(userId) {
+      if (karmaCache.has(userId)) return karmaCache.get(userId);
+      try {
+        const res = await fetch(`${WORKER_URL}?userId=${encodeURIComponent(userId)}`);
+        const data = await res.json();
 
-    const val = parseFloat(data?.stats?.karmaDelta || 0);
-    const rank = parseInt(data?.stats?.karmaDayRank || 0);
+        const val = parseFloat(data?.stats?.karmaDelta || 0);
+        const rank = parseInt(data?.stats?.karmaDayRank || 0);
 
-    const result = { val, rank };
-    karmaCache.set(userId, result);
-    return result;
-  } catch {
-    return { val: 0, rank: 0 };
-  }
-}
-
+        const result = { val, rank };
+        karmaCache.set(userId, result);
+        return result;
+      } catch {
+        return { val: 0, rank: 0 };
+      }
+    }
 
     async function limitedMap(array, limit, asyncFn, onProgress) {
       const results = [];
@@ -198,33 +209,32 @@
       return results;
     }
 
-   async function processTeam(players, updateProgress) {
-  let teamTotal = 0;
-  const rows = await limitedMap(players, 10, async p => {
-    const userId = p['User ID']?.trim();
-    const userAt = p['User @']?.trim() || 'Unknown';
-    const role = (p['role'] || '').toLowerCase();
-    const deduction = parseFloat(p['deductions'] || 0);
+    async function processTeam(players, updateProgress) {
+      let teamTotal = 0;
+      const rows = await limitedMap(players, 10, async p => {
+        const userId = p['User ID']?.trim();
+        const userAt = p['User @']?.trim() || 'Unknown';
+        const role = (p['role'] || '').toLowerCase();
+        const deduction = parseFloat(p['deductions'] || 0);
 
-    if (!userId || userId.toLowerCase() === 'not found') return `${userAt}: missing`;
+        if (!userId || userId.toLowerCase() === 'not found') return `<div class="player-row"><span class="player-label">${userAt}: missing</span><span class="karma-rank">-</span></div>`;
 
-    const { val: base, rank } = await fetchKarma(userId);
-    const adjusted = base - deduction;
-    const boosted = role === 'captain' ? adjusted * 1.5 : adjusted;
+        const { val: base, rank } = await fetchKarma(userId);
+        const adjusted = base - deduction;
+        const boosted = role === 'captain' ? adjusted * 1.5 : adjusted;
 
-    teamTotal += boosted;
+        teamTotal += boosted;
 
-    const rounded = Math.round(adjusted);
+        const rounded = Math.round(adjusted);
 
-    const label = role === 'captain'
-      ? `${userAt} (c): ${rounded} (${rank}) → ${Math.round(boosted)}`
-      : `${userAt}: ${rounded} (${rank})`;
+        const label = role === 'captain'
+          ? `<span class="player-label">${userAt} (c): ${rounded}${boosted !== adjusted ? ` → ${Math.round(boosted)}` : ''}</span>`
+          : `<span class="player-label">${userAt}: ${rounded}</span>`;
 
-    return `<div class="player-row">${label}</div>`;
-  }, updateProgress);
-  return { rows, total: Math.round(teamTotal) };
-}
-
+        return `<div class="player-row">${label}<span class="karma-rank">${rank}</span></div>`;
+      }, updateProgress);
+      return { rows, total: Math.round(teamTotal) };
+    }
 
     function createGameHTML(team1, team2, t1Total, t2Total, t1Rows, t2Rows, index) {
       const id = `game-${index}`;
