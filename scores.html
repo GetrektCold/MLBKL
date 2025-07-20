@@ -157,18 +157,23 @@
       });
     }
 
-    async function fetchKarma(userId) {
-      if (karmaCache.has(userId)) return karmaCache.get(userId);
-      try {
-        const res = await fetch(`${WORKER_URL}?userId=${encodeURIComponent(userId)}`);
-        const data = await res.json();
-        const val = parseFloat(data?.stats?.karmaDelta || 0);
-        karmaCache.set(userId, val);
-        return val;
-      } catch {
-        return 0;
-      }
-    }
+   async function fetchKarma(userId) {
+  if (karmaCache.has(userId)) return karmaCache.get(userId);
+  try {
+    const res = await fetch(`${WORKER_URL}?userId=${encodeURIComponent(userId)}`);
+    const data = await res.json();
+
+    const val = parseFloat(data?.stats?.karmaDelta || 0);
+    const rank = parseInt(data?.stats?.karmaDayRank || 0);
+
+    const result = { val, rank };
+    karmaCache.set(userId, result);
+    return result;
+  } catch {
+    return { val: 0, rank: 0 };
+  }
+}
+
 
     async function limitedMap(array, limit, asyncFn, onProgress) {
       const results = [];
@@ -188,31 +193,33 @@
       return results;
     }
 
-    async function processTeam(players, updateProgress) {
-      let teamTotal = 0;
-      const rows = await limitedMap(players, 10, async p => {
-        const userId = p['User ID']?.trim();
-        const userAt = p['User @']?.trim() || 'Unknown';
-        const role = (p['role'] || '').toLowerCase();
-        const deduction = parseFloat(p['deductions'] || 0);
+   async function processTeam(players, updateProgress) {
+  let teamTotal = 0;
+  const rows = await limitedMap(players, 10, async p => {
+    const userId = p['User ID']?.trim();
+    const userAt = p['User @']?.trim() || 'Unknown';
+    const role = (p['role'] || '').toLowerCase();
+    const deduction = parseFloat(p['deductions'] || 0);
 
-        if (!userId || userId.toLowerCase() === 'not found') return `${userAt}: missing`;
+    if (!userId || userId.toLowerCase() === 'not found') return `${userAt}: missing`;
 
-        const base = await fetchKarma(userId);
-        const adjusted = base - deduction;
-        const boosted = role === 'captain' ? adjusted * 1.5 : adjusted;
+    const { val: base, rank } = await fetchKarma(userId);
+    const adjusted = base - deduction;
+    const boosted = role === 'captain' ? adjusted * 1.5 : adjusted;
 
-        teamTotal += boosted;
+    teamTotal += boosted;
 
-        const rounded = Math.round(adjusted);
-        const label = role === 'captain'
-          ? `${userAt} (c): ${rounded} → ${Math.round(boosted)}`
-          : `${userAt}: ${rounded}`;
+    const rounded = Math.round(adjusted);
 
-        return `<div class="player-row">${label}</div>`;
-      }, updateProgress);
-      return { rows, total: Math.round(teamTotal) };
-    }
+    const label = role === 'captain'
+      ? `${userAt} (c): ${rounded} (${rank}) → ${Math.round(boosted)}`
+      : `${userAt}: ${rounded} (${rank})`;
+
+    return `<div class="player-row">${label}</div>`;
+  }, updateProgress);
+  return { rows, total: Math.round(teamTotal) };
+}
+
 
     function createGameHTML(team1, team2, t1Total, t2Total, t1Rows, t2Rows, index) {
       const id = `game-${index}`;
