@@ -164,7 +164,7 @@
     const data = await res.json();
 
     const val = parseFloat(data?.stats?.karmaDelta || 0);
-    const rank = parseInt(data?.stats?.karmaRank || 0);
+    const rank = parseInt(data?.stats?.karmaDayRank || 0);
 
     const result = { val, rank };
     karmaCache.set(userId, result);
