@@ -19,7 +19,6 @@
       --text-muted: #aaa;
     }
 
-    /* ✨ Styling for a dark theme scoreboard UI */
     * {
       margin: 0;
       padding: 0;
@@ -39,6 +38,10 @@
     h1 {
       text-align: center;
       font-size: 32px;
+    }
+
+    h5 {
+      text-align: center;
       margin-bottom: 16px;
     }
 
@@ -109,35 +112,47 @@
       border-radius: 6px;
       margin-bottom: 6px;
       font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .player-label {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .karma-rank {
+      color: var(--accent-color);
+      margin-left: 16px;
+      font-weight: bold;
+      min-width: 32px;
+      text-align: right;
     }
   </style>
 </head>
 <body>
 
-  <!-- ✏️ Customize your scoreboard title -->
   <h1>RSKL Live Scores</h1>
-
+  <h5>Karma day rank now shows at the far right of each player</h5>
   <div class="loading" id="loading-indicator">Loading...</div>
   <div id="games-container"></div>
 
-  <!-- ✏️ Link back to homepage -->
   <a href="index.html" class="home-link">← Home</a>
 
   <script>
     // === 🔧 CONFIGURATION SECTION (Update these) ===
 
     // ✏️ Link to your Google Sheets CSV for the schedule
-    const scheduleCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRmAVfSxWjRK4xQRO7xKA9ssi1esBXEvsevLR6DP6eyjvoTcoNychUYZAewLz68otx3NAadChuo7ZSH/pub?output=csv';
+      const scheduleCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRmAVfSxWjRK4xQRO7xKA9ssi1esBXEvsevLR6DP6eyjvoTcoNychUYZAewLz68otx3NAadChuo7ZSH/pub?output=csv';
 
     // ✏️ Link to your Google Sheets CSV for rosters
     const rosterCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSxsyGYqlopbm1Ftgi_LJyDIiQZZUy4Wwax-2z1mQYLb_1-ltPvsF0_khHS8awZXOno7Ell8-umXzaz/pub?output=csv';
 
     // ✏️ Your Cloudflare Worker or proxy URL that fetches user karma
     const WORKER_URL = 'https://rskl.hockeybaseball112.workers.dev/';
-
     // === 🔁 Functional logic ===
 
-   
     const karmaCache = new Map();
 
     function getTodayString() {
