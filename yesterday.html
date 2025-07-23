@@ -15,9 +15,15 @@
   <div id="games-container"></div>
 
   <script>
-    const scheduleCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSpulPcOQfax804A13iR8RWrX5cATgGi9sHSiDlH_8cRc7Elco-g9EECC97OeuLFBurN-ze-KWhqovZ/pub?output=csv';
-    const rosterCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSEEzC1lcmy8r7irgTXLWUJhvEsMgN1YmwUFfAQ2wBQMNTu_L1uXQe_c-tdy9c3PJ416_wtBkyQKlbD/pub?output=csv';
-    const WORKER_URL = 'https://karma.messagejulian.workers.dev/';
+      // ✏️ Link to your Google Sheets CSV for the schedule
+    const scheduleCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS53NF9n-F05pPKOmYmuh_DGMe_-k8AQcKEqsOF5VtYgQj_6xqPwIQv8SEp3dIga8cqS-wjSPB4VM4t/pub?output=csv';
+
+    // ✏️ Link to your Google Sheets CSV for rosters
+    const rosterCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQojOmHcrhb4PKKqiE6mx-bNaPmfVObS0jbUuXU50sKXpKdUlhuPX04hm7UpZ89QBRrNBTFM_z77ESa/pub?output=csv';
+
+    // ✏️ Your Cloudflare Worker or proxy URL that fetches user karma
+    const WORKER_URL = 'https://small-river-3c61.trixstalt.workers.dev/';
+
     const karmaCache = new Map();
 
     let allGames = [];
