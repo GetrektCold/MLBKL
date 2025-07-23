@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RKML Yesterday Scores</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+  <h1>RKML Yesterday Scores</h1>
+  <p>Select the date for the games you want to show (ex. morning of 7/21, select 7/20)</p>
+  <p>Takes a sec to load</p>
+  <label>Select Date: <select id="date-select"></select></label>
+  <button type="button" onclick="loadGamesForDate();">Load</button>
+  <div id="games-container"></div>
+
+  <script>
+    const scheduleCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSpulPcOQfax804A13iR8RWrX5cATgGi9sHSiDlH_8cRc7Elco-g9EECC97OeuLFBurN-ze-KWhqovZ/pub?output=csv';
+    const rosterCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSEEzC1lcmy8r7irgTXLWUJhvEsMgN1YmwUFfAQ2wBQMNTu_L1uXQe_c-tdy9c3PJ416_wtBkyQKlbD/pub?output=csv';
+    const WORKER_URL = 'https://karma.messagejulian.workers.dev/';
+    const karmaCache = new Map();
+
+    let allGames = [];
+    let allPlayers = [];
+
+    function parseCSV(text) {
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.trim());
+      return lines.slice(1).map(line => {
+        const values = line.split(',').map(p => p.trim());
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = values[i]);
+        return obj;
+      });
+    }
+
+    async function fetchKarma(userId) {
+      if (karmaCache.has(userId)) return karmaCache.get(userId);
+      try {
+        const res = await fetch(`${WORKER_URL}?userId=${encodeURIComponent(userId)}`);
+        const data = await res.json();
+        const val = parseFloat(data?.stats?.karmaYesterdayDelta || 0);
+        const rank = parseInt(data?.stats?.karmaYesterdayRank || 0);
+        const result = { val, rank };
+        karmaCache.set(userId, result);
+        return result;
+      } catch {
+        return { val: 0, rank: 0 };
+      }
+    }
+
+    async function processTeam(players) {
+      let teamTotal = 0;
+      const rows = [];
+      for (const p of players) {
+        const userId = p['User ID']?.trim();
+        const userAt = p['User @']?.trim() || 'Unknown';
+        const role = (p['role'] || '').toLowerCase();
+        const deduction = parseFloat(p['deductions'] || 0);
+
+        if (!userId || userId.toLowerCase() === 'not found') {
+          rows.push(`<li>${userAt}: missing</li>`);
+          continue;
+        }
+
+        const { val: base, rank } = await fetchKarma(userId);
+        const adjusted = base - deduction;
+        const boosted = role === 'captain' ? adjusted * 1.5 : adjusted;
+        teamTotal += boosted;
+        const rounded = Math.round(adjusted);
+        const label = role === 'captain'
+          ? `${userAt} (c): ${rounded} (${rank}) → ${Math.round(boosted)}`
+          : `${userAt}: ${rounded} (${rank})`;
+        rows.push(`<li>${label}</li>`);
+      }
+      return { rows, total: Math.round(teamTotal) };
+    }
+
+    function createGameHTML(team1, team2, t1Total, t2Total, t1Rows, t2Rows) {
+      return `
+        <div>
+          <p><strong>${team1} (${t1Total})</strong></p>
+          <ul>${t1Rows.join('')}</ul>
+          <p><strong>${team2} (${t2Total})</strong></p>
+          <ul>${t2Rows.join('')}</ul>
+          <hr>
+        </div>`;
+    }
+
+    async function loadGamesForDate() {
+      const selectedDate = document.getElementById('date-select').value;
+      const container = document.getElementById('games-container');
+      container.innerHTML = '<p>Loading...</p>';
+
+      try {
+        const [rosterRes] = await Promise.all([
+          axios.get(rosterCsvUrl)
+        ]);
+        allPlayers = parseCSV(rosterRes.data);
+
+        const games = allGames.filter(g => g.Date?.trim() === selectedDate);
+        const players = allPlayers.filter(p => p['playing?']?.toLowerCase() === 'yes');
+
+        let output = '';
+        for (const game of games) {
+          const t1Players = players.filter(p => p.Team === game['Team 1']);
+          const t2Players = players.filter(p => p.Team === game['Team 2']);
+          const [t1Data, t2Data] = await Promise.all([
+            processTeam(t1Players),
+            processTeam(t2Players)
+          ]);
+          output += createGameHTML(game['Team 1'], game['Team 2'], t1Data.total, t2Data.total, t1Data.rows, t2Data.rows);
+        }
+        container.innerHTML = output || '<p>No games for this date.</p>';
+      } catch (e) {
+        container.innerHTML = '<p>Failed to load game data.</p>';
+        console.error(e);
+      }
+    }
+
+    async function populateDropdown() {
+      const [scheduleRes] = await Promise.all([
+        axios.get(scheduleCsvUrl)
+      ]);
+      allGames = parseCSV(scheduleRes.data);
+
+      const dateSet = new Set(allGames.map(g => g.Date?.trim()).filter(Boolean));
+      const dates = Array.from(dateSet).sort((a, b) => new Date(a) - new Date(b));
+
+      const select = document.getElementById('date-select');
+      select.innerHTML = '';
+      dates.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = d;
+        select.appendChild(opt);
+      });
+    }
+
+    populateDropdown();
+  </script>
+</body>
+</html>
